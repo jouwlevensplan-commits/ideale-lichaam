@@ -1,0 +1,30 @@
+node_modules
+dist
+
+# Lokale JSON-"database" van de storage-service; hoort nooit in het image.
+storage.json
+
+npm-debug.log*
+.npm
+
+# Versiebeheer en editorconfig
+.git
+.gitignore
+.vscode
+.idea
+
+# Docker-bestanden zelf
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Omgevings- en geheime bestanden
+.env
+.env.*
+!.env.example
+
+# Documentatie/planning, niet nodig in het image
+*.md
+
+# Tests en build-artefacten die niet in de runtime image horen
+coverage

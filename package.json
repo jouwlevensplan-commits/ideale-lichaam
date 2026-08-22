@@ -1,0 +1,20 @@
+{
+  "name": "maaltijd-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI maaltijd-tracker backend",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test dist/services/__tests__/*.js dist/compliance/__tests__/*.js dist/__tests__/*.js"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
