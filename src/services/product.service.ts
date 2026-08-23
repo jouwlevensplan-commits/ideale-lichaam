@@ -90,10 +90,14 @@ async function fetchFromMockOpenFoodFacts(queryOrBarcode: string): Promise<MockO
  * resultaat automatisch in de cache wordt opgeslagen voor volgende zoekopdrachten.
  *
  * Handmatig zoeken is een kernfunctie van de gratis laag: er wordt bewust geen premium-abonnement
- * of GDPR-consent voor vereist (de catalogus bevat geen persoonsgegevens van de gebruiker).
+ * of GDPR-consent voor vereist (de catalogus bevat geen persoonsgegevens van de gebruiker). `userId`
+ * is optioneel: alleen wanneer hij is meegegeven, valideren we dat de gebruiker bestaat (bv. voor
+ * callers die dat toch als extra check willen); zonder `userId` is de catalogus ook doorzoekbaar.
  */
-export async function searchProduct(queryOrBarcode: string, userId: string): Promise<MealCatalogItem> {
-  await storageService.getUserById(userId);
+export async function searchProduct(queryOrBarcode: string, userId?: string): Promise<MealCatalogItem> {
+  if (userId) {
+    await storageService.getUserById(userId);
+  }
 
   const localMatches = await storageService.searchMealCatalog(queryOrBarcode);
   if (localMatches.length > 0) {
