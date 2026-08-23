@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,15 +7,23 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import * as apiService from '@/services/api.service';
 import { CookieBanner, type CookiePreferences } from '@/screens/onboarding/CookieBanner';
+import { setSession, useSession } from '@/services/session';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
  * Scherm 1: ePrivacy Cookiebanner Gate. Verschijnt blokkerend bij de eerste opstart (na login/
- * registratie, zodat `setAdConsent` een bestaande userId heeft — zie session.ts).
+ * registratie, zodat `setAdConsent` een bestaande userId heeft — zie session.ts). Zodra de
+ * gebruiker een keuze heeft gemaakt, onthouden we dat lokaal (`cookieConsentGiven`) zodat de
+ * banner na een herstart van de app niet opnieuw verschijnt.
  */
 export default function CookieGateScreen() {
   const theme = useTheme();
+  const { cookieConsentGiven } = useSession();
   const [saving, setSaving] = useState(false);
+
+  if (cookieConsentGiven) {
+    return <Redirect href="/(onboarding)/consent" />;
+  }
 
   const savePreferencesAndContinue = async (preferences: CookiePreferences) => {
     setSaving(true);
@@ -28,6 +36,7 @@ export default function CookieGateScreen() {
       // Cookiekeuzes zijn niet blokkerend voor de rest van de onboarding: bij een tijdelijke
       // netwerkfout gaan we toch door, de gebruiker kan dit later nog aanpassen in Profiel.
     } finally {
+      setSession({ cookieConsentGiven: true });
       setSaving(false);
       router.replace('/(onboarding)/consent');
     }
