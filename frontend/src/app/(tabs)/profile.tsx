@@ -10,7 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing, StatusColors } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import * as apiService from '@/services/api.service';
-import { SAAS_WITHDRAWAL_COPY } from '@/services/legal-copy';
+import { COMPANY_LEGAL_INFO, SAAS_WITHDRAWAL_COPY } from '@/services/legal-copy';
 import { clearSession, setSession, useSession } from '@/services/session';
 
 /** Scherm 7: Profiel, SaaS-abonnement (WER-disclaimer) & instellingen. */
@@ -141,6 +141,21 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        <Card style={styles.section}>
+          <ThemedText type="smallBold">Juridische informatie</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            Verplichte ondernemingsgegevens conform Boek VI van het Wetboek van Economisch Recht (WER).
+          </ThemedText>
+
+          <View style={styles.legalList}>
+            <LegalInfoRow label="Maatschappelijke naam" value={COMPANY_LEGAL_INFO.companyName} />
+            <LegalInfoRow label="KBO-nummer" value={COMPANY_LEGAL_INFO.kboNumber} />
+            <LegalInfoRow label="Btw-nummer" value={COMPANY_LEGAL_INFO.vatNumber} />
+            <LegalInfoRow label="Maatschappelijke zetel" value={COMPANY_LEGAL_INFO.registeredOffice} />
+            <LegalInfoRow label="E-mailadres" value={COMPANY_LEGAL_INFO.email} />
+          </View>
+        </Card>
+
         <Button
           label={deleting ? 'Bezig...' : 'Verwijder Mijn Account & Alle Gezondheidsdata'}
           onPress={confirmDeleteAccount}
@@ -149,6 +164,17 @@ export default function ProfileScreen() {
         />
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function LegalInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.legalRow}>
+      <ThemedText type="small" themeColor="textMuted">
+        {label}
+      </ThemedText>
+      <ThemedText type="small">{value}</ThemedText>
+    </View>
   );
 }
 
@@ -173,5 +199,11 @@ const styles = StyleSheet.create({
   },
   switchLabel: {
     flex: 1,
+  },
+  legalList: {
+    gap: Spacing.two,
+  },
+  legalRow: {
+    gap: 2,
   },
 });

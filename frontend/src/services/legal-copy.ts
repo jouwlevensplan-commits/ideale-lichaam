@@ -70,6 +70,19 @@ export const HEALTH_DATA_CONSENT_COPY = {
     'Instellingen > Privacy > Toestemmingen en zet de schakelaar "Gezondheidsgegevens" uit.',
 };
 
+/**
+ * Verplichte ondernemingsidentificatie conform Boek VI WER (informatieplicht vóór het sluiten van
+ * een overeenkomst op afstand, art. VI.45 e.v.) — moet eenvoudig vindbaar zijn in de app, hier op
+ * het Profiel-scherm. Placeholders invullen met de echte gegevens vóór productielancering.
+ */
+export const COMPANY_LEGAL_INFO = {
+  companyName: '[Maatschappelijke naam van de onderneming]',
+  kboNumber: '[BE0XXX.XXX.XXX]',
+  vatNumber: '[BEXXXXXXXXXX]',
+  registeredOffice: '[Straat + nummer, postcode, gemeente, België]',
+  email: '[contact@voorbeeld.be]',
+};
+
 /** Exacte tekst uit SAAS_WITHDRAWAL_DISCLAIMER (backend) — conform artikel VI.53, 13° WER. */
 export const SAAS_WITHDRAWAL_COPY = {
   title: 'Bevestiging start betaald abonnement na de proefperiode',
