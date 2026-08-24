@@ -16,8 +16,6 @@ export class OpenFoodFactsError extends Error {
 export interface OpenFoodFactsProduct {
   barcode: string | null;
   name: string;
-  /** Franstalige naam, indien Open Food Facts die meegeeft (voor een tweetalige `meal_catalog`-cache). */
-  name_fr: string | null;
   brand: string | null;
   calories_kcal: number;
   protein_g: number;
@@ -97,12 +95,10 @@ export function mapOpenFoodFactsProduct(raw: unknown): OpenFoodFactsProduct | nu
 
   const brandsRaw = typeof product.brands === 'string' ? product.brands.trim() : '';
   const barcodeRaw = typeof product.code === 'string' ? product.code.trim() : '';
-  const nameFr = typeof product.product_name_fr === 'string' ? product.product_name_fr.trim() : '';
 
   return {
     barcode: barcodeRaw.length > 0 ? barcodeRaw : null,
     name,
-    name_fr: nameFr.length > 0 ? nameFr : null,
     brand: brandsRaw.length > 0 ? (brandsRaw.split(',')[0]?.trim() ?? null) : null,
     calories_kcal: caloriesKcal,
     protein_g: firstFiniteNumber(nutriments['proteins_100g']) ?? 0,
