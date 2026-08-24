@@ -19,11 +19,11 @@ function mapProduct(product: ProductDto) {
 }
 
 /**
- * Zoekt producten op naam (Nederlands/Frans) of barcode via de gedeelde, gerangschikte
- * `meal_catalog`-cache (product.service.ts): eerst lokaal, anders een Open Food Facts-lookup die
- * het resultaat cachet. Altijd gratis en consent-vrij (databaseplan §3 — geen persoonsgegevens),
- * dus geen `withUser`-poort hier. Geeft een lege lijst terug (HTTP 200) wanneer niets gevonden
- * wordt: dat is voor een zoekresultaat het normale, niet-foutieve pad.
+ * Zoekt een product op naam of barcode via de gedeelde `meal_catalog`-cache (product.service.ts):
+ * eerst lokaal, anders een Open Food Facts-lookup die het resultaat cachet. Altijd gratis en
+ * consent-vrij (databaseplan §3 — geen persoonsgegevens), dus geen `withUser`-poort hier. Geeft
+ * een lege lijst terug (HTTP 200) in plaats van een 404 wanneer niets gevonden wordt: dat is voor
+ * een zoekresultaat het normale, niet-foutieve pad.
  */
 export async function searchProducts(req: Request, res: Response): Promise<void> {
   const query = req.query.queryOrBarcode;
@@ -31,6 +31,14 @@ export async function searchProducts(req: Request, res: Response): Promise<void>
     throw new BadRequestError('Query-parameter "queryOrBarcode" is verplicht.');
   }
 
-  const products = await productService.searchProduct(query);
-  res.status(200).json(products.map(mapProduct));
+  try {
+    const product = await productService.searchProduct(query);
+    res.status(200).json([mapProduct(product)]);
+  } catch (error) {
+    if (error instanceof productService.ProductNotFoundError) {
+      res.status(200).json([]);
+      return;
+    }
+    throw error;
+  }
 }
