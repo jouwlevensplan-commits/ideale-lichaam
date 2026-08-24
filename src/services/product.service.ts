@@ -2,13 +2,7 @@ import { Op } from 'sequelize';
 
 import { MealCatalogItem } from '../db/models';
 import * as openFoodFacts from './open-food-facts.service';
-
-export class ProductNotFoundError extends Error {
-  constructor(query: string) {
-    super(`Geen product gevonden voor "${query}", ook niet via Open Food Facts.`);
-    this.name = 'ProductNotFoundError';
-  }
-}
+import { stringSimilarity } from './string-similarity';
 
 function toPlainNumber(value: number | string): number {
   return typeof value === 'number' ? value : Number(value);
@@ -42,13 +36,74 @@ function toDto(row: MealCatalogItem): ProductDto {
   };
 }
 
-/** Exacte barcode-match, of een niet-hoofdlettergevoelige deelmatch op naam/merk. */
-async function findInCache(query: string): Promise<MealCatalogItem | null> {
-  return MealCatalogItem.findOne({
-    where: {
-      [Op.or]: [{ barcode: query }, { name: { [Op.iLike]: `%${query}%` } }, { brand: { [Op.iLike]: `%${query}%` } }],
-    },
+const CANDIDATE_POOL_SIZE = 50;
+const MAX_RESULTS = 10;
+
+/**
+ * Rangschikt kandidaten die de database al (via `ILIKE`) heeft gefilterd: exacte matches eerst
+ * (onderling gesorteerd op populariteit), dan de rest gesorteerd op tekstgelijkenis
+ * (Levenshtein-gebaseerd, zie string-similarity.ts) en tot slot populariteit/alfabetisch als
+ * tiebreak. Volledig in de applicatielaag — geen databasefunctie of -extensie nodig.
+ */
+function rankCatalogItems(query: string, items: MealCatalogItem[]): MealCatalogItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const ranked = items.map((item) => {
+    const isExactMatch =
+      item.name.trim().toLowerCase() === normalizedQuery ||
+      item.name_fr?.trim().toLowerCase() === normalizedQuery ||
+      item.barcode === query.trim();
+
+    const similarity = Math.max(
+      stringSimilarity(query, item.name),
+      item.name_fr ? stringSimilarity(query, item.name_fr) : 0
+    );
+
+    return { item, isExactMatch, similarity };
   });
+
+  ranked.sort((a, b) => {
+    if (a.isExactMatch !== b.isExactMatch) {
+      return a.isExactMatch ? -1 : 1;
+    }
+    if (a.isExactMatch) {
+      return b.item.popularity - a.item.popularity;
+    }
+    if (b.similarity !== a.similarity) {
+      return b.similarity - a.similarity;
+    }
+    if (b.item.popularity !== a.item.popularity) {
+      return b.item.popularity - a.item.popularity;
+    }
+    return a.item.name.localeCompare(b.item.name);
+  });
+
+  return ranked.map((entry) => entry.item);
+}
+
+/**
+ * Zoekt in `meal_catalog` op zowel de Nederlandstalige (`name`) als Franstalige (`name_fr`) naam,
+ * of een exacte barcode — één canoniek record per voedingsmiddel dekt dus altijd beide talen. De
+ * database doet enkel een veilige, case-insensitieve substring-match (`ILIKE`); de rangschikking
+ * (exact/fuzzy/populariteit) gebeurt daarna in JavaScript, zie `rankCatalogItems`.
+ */
+async function searchCatalogRanked(query: string): Promise<ProductDto[]> {
+  const likePattern = `%${query}%`;
+
+  const candidates = await MealCatalogItem.findAll({
+    where: {
+      [Op.or]: [{ barcode: query }, { name: { [Op.iLike]: likePattern } }, { name_fr: { [Op.iLike]: likePattern } }],
+    },
+    limit: CANDIDATE_POOL_SIZE,
+  });
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  return rankCatalogItems(query, candidates)
+    .slice(0, MAX_RESULTS)
+    .map(toDto);
 }
 
 /** Cachet een Open Food Facts-treffer; bij een race op eenzelfde barcode wordt de bestaande rij teruggegeven. */
@@ -57,6 +112,7 @@ async function cacheExternalProduct(product: openFoodFacts.OpenFoodFactsProduct)
     return await MealCatalogItem.create({
       barcode: product.barcode,
       name: product.name,
+      name_fr: product.name_fr,
       brand: product.brand,
       calories_kcal: product.calories_kcal,
       protein_g: product.protein_g,
@@ -75,24 +131,24 @@ async function cacheExternalProduct(product: openFoodFacts.OpenFoodFactsProduct)
 }
 
 /**
- * Zoekt een product op naam of barcode. Zoekt eerst in de Postgres `meal_catalog`-cache; bij een
- * cache-miss volgt een echte Open Food Facts-lookup (barcode-exact of vrije tekst, zie
- * `open-food-facts.service.ts`) waarvan het resultaat automatisch gecachet wordt voor volgende
- * zoekopdrachten. Een tijdelijk onbereikbare Open Food Facts-API wordt behandeld als "niet
- * gevonden" in plaats van de hele zoekopdracht te laten crashen.
+ * Zoekt producten op naam (Nederlands of Frans) of barcode. Zoekt eerst, gerangschikt, in de
+ * Postgres `meal_catalog`-cache; bij nul lokale treffers volgt één Open Food Facts-lookup
+ * (barcode-exact of vrije tekst, zie `open-food-facts.service.ts`) waarvan het resultaat
+ * automatisch gecachet wordt voor volgende zoekopdrachten. Een tijdelijk onbereikbare Open Food
+ * Facts wordt behandeld als "geen resultaten" in plaats van de hele zoekopdracht te laten crashen.
  *
  * Handmatig zoeken is een kernfunctie van de gratis laag: bewust geen premium-abonnement of
  * GDPR-consent vereist (de catalogus bevat geen persoonsgegevens van de gebruiker).
  */
-export async function searchProduct(queryOrBarcode: string): Promise<ProductDto> {
+export async function searchProduct(queryOrBarcode: string): Promise<ProductDto[]> {
   const trimmed = queryOrBarcode.trim();
   if (trimmed.length === 0) {
-    throw new ProductNotFoundError(queryOrBarcode);
+    return [];
   }
 
-  const cached = await findInCache(trimmed);
-  if (cached) {
-    return toDto(cached);
+  const localMatches = await searchCatalogRanked(trimmed);
+  if (localMatches.length > 0) {
+    return localMatches;
   }
 
   let external: openFoodFacts.OpenFoodFactsProduct | null;
@@ -100,14 +156,14 @@ export async function searchProduct(queryOrBarcode: string): Promise<ProductDto>
     external = await openFoodFacts.findProduct(trimmed);
   } catch {
     // Open Food Facts is een externe, niet altijd beschikbare dienst; een storing daar mag de
-    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon "niet gevonden".
+    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon een lege resultatenlijst.
     external = null;
   }
 
   if (!external) {
-    throw new ProductNotFoundError(queryOrBarcode);
+    return [];
   }
 
   const cachedItem = await cacheExternalProduct(external);
-  return toDto(cachedItem);
+  return [toDto(cachedItem)];
 }
