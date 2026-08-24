@@ -86,6 +86,11 @@ export function addEarnedBadges(badgeKeys: string[]): void {
 
 const DEMO_USER_ID = 'demo-11111111-1111-4111-8111-111111111111';
 
+/** True als `userId` de gemockte demo-gebruiker "Sam" is (zie `loginAsDemoUser`), niet een echt account. */
+export function isDemoUserId(userId: string | null): boolean {
+  return userId === DEMO_USER_ID;
+}
+
 function toISODate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }

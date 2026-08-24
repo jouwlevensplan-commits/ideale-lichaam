@@ -11,18 +11,24 @@ import { Spacing, StatusColors } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import * as apiService from '@/services/api.service';
 import { COMPANY_LEGAL_INFO, SAAS_WITHDRAWAL_COPY } from '@/services/legal-copy';
-import { clearSession, setSession, useSession } from '@/services/session';
+import { clearSession, isDemoUserId, setSession, useSession } from '@/services/session';
 
 /** Scherm 7: Profiel, SaaS-abonnement (WER-disclaimer) & instellingen. */
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user } = useSession();
+  const { user, userId } = useSession();
+  const isDemoUser = isDemoUserId(userId);
   const [withdrawalChecked, setWithdrawalChecked] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [analyticsConsent, setAnalyticsConsent] = useState(user?.analyticsConsent ?? false);
   const [personalizedAdsConsent, setPersonalizedAdsConsent] = useState(user?.personalizedAdsConsent ?? false);
   const [savingConsent, setSavingConsent] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const logout = () => {
+    clearSession();
+    router.replace('/(auth)/login');
+  };
 
   const startSubscription = async () => {
     setSubscribing(true);
@@ -49,17 +55,24 @@ export default function ProfileScreen() {
 
   const confirmDeleteAccount = () => {
     Alert.alert(
-      'Account verwijderen',
-      'Weet je zeker dat je je account en alle gezondheidsgegevens definitief wilt verwijderen? Dit kan niet ongedaan worden gemaakt.',
+      isDemoUser ? 'Demo-sessie wissen' : 'Account verwijderen',
+      isDemoUser
+        ? 'Dit wist de lokale demo-gegevens van "Sam" van dit toestel. Er wordt geen server aangeroepen — je kunt de onboarding daarna opnieuw vanaf 0 doorlopen.'
+        : 'Weet je zeker dat je je account en alle gezondheidsgegevens definitief wilt verwijderen? Dit kan niet ongedaan worden gemaakt.',
       [
         { text: 'Annuleren', style: 'cancel' },
         {
-          text: 'Verwijderen',
+          text: isDemoUser ? 'Wissen' : 'Verwijderen',
           style: 'destructive',
           onPress: async () => {
             setDeleting(true);
             try {
-              await apiService.deleteAccount();
+              // Demo-modus bestaat alleen lokaal (services/session.ts#loginAsDemoUser): er is
+              // geen echt account op de server om te verwijderen, en DELETE /api/account bestaat
+              // daar nog niet voor, dus we wissen enkel de lokale sessie.
+              if (!isDemoUser) {
+                await apiService.deleteAccount();
+              }
               clearSession();
               router.replace('/');
             } catch (err) {
@@ -76,9 +89,12 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          Profiel
-        </ThemedText>
+        <View style={styles.headerRow}>
+          <ThemedText type="title" style={styles.title}>
+            Profiel
+          </ThemedText>
+          <Button label="Uitloggen" onPress={logout} variant="outline" style={styles.logoutButton} />
+        </View>
 
         <Card style={styles.section}>
           <ThemedText type="smallBold">Abonnement</ThemedText>
@@ -157,7 +173,13 @@ export default function ProfileScreen() {
         </Card>
 
         <Button
-          label={deleting ? 'Bezig...' : 'Verwijder Mijn Account & Alle Gezondheidsdata'}
+          label={
+            deleting
+              ? 'Bezig...'
+              : isDemoUser
+                ? 'Wis Demo-sessie & Begin Opnieuw'
+                : 'Verwijder Mijn Account & Alle Gezondheidsdata'
+          }
           onPress={confirmDeleteAccount}
           disabled={deleting}
           color={StatusColors.error}
@@ -188,6 +210,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 26,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  logoutButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
   section: {
     gap: Spacing.two,
