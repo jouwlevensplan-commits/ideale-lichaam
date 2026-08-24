@@ -6,11 +6,12 @@ import path from 'node:path';
 import { createUser, setHealthDataConsent, setPremiumStatus, setAdConsent, GdprConsentError } from '../storage.service';
 import { processMealPhoto, processMealVoice, PremiumAccessError } from '../ai-recognition.service';
 
-// Product-zoektests (cache-hit/-miss, Open Food Facts-fallback, ProductNotFoundError) verhuisden
-// naar `open-food-facts.test.ts` voor het deel dat zonder netwerk/database te testen is
-// (responsmapping). `product.service.ts` zoekt sinds de Postgres-migratie in de `meal_catalog`-
-// tabel i.p.v. het lokale storage.json-bestand, dus die orkestratie vereist nu een echte database-
-// en netwerkverbinding om te testen — buiten bereik van deze offline testsuite.
+// Product-zoektests (cache-hit/-miss, Open Food Facts-fallback) verhuisden naar
+// `open-food-facts.test.ts` voor het deel dat zonder netwerk/database te testen is
+// (responsmapping). De generieke-catalogusrangschikking wordt los getest in
+// `generic-food-search.test.ts` (pure functie, geen database nodig). `product.service.ts`
+// combineert dat met de Postgres `meal_catalog`-cache, wat een echte database- en
+// netwerkverbinding vereist om te testen — buiten bereik van deze offline testsuite.
 
 let tempDir: string;
 

@@ -2,13 +2,8 @@ import { Op } from 'sequelize';
 
 import { MealCatalogItem } from '../db/models';
 import * as openFoodFacts from './open-food-facts.service';
-
-export class ProductNotFoundError extends Error {
-  constructor(query: string) {
-    super(`Geen product gevonden voor "${query}", ook niet via Open Food Facts.`);
-    this.name = 'ProductNotFoundError';
-  }
-}
+import { GENERIC_FOODS, type GenericFood } from '../data/generic-foods';
+import { stringSimilarity } from './string-similarity';
 
 function toPlainNumber(value: number | string): number {
   return typeof value === 'number' ? value : Number(value);
@@ -42,13 +37,69 @@ function toDto(row: MealCatalogItem): ProductDto {
   };
 }
 
-/** Exacte barcode-match, of een niet-hoofdlettergevoelige deelmatch op naam/merk. */
-async function findInCache(query: string): Promise<MealCatalogItem | null> {
-  return MealCatalogItem.findOne({
+function genericToDto(food: GenericFood): ProductDto {
+  return {
+    id: `generic:${food.seedKey}`,
+    barcode: null,
+    name: food.name,
+    brand: null,
+    calories_kcal: food.calories_kcal,
+    protein_g: food.protein_g,
+    carbs_g: food.carbs_g,
+    fat_g: food.fat_g,
+    fiber_g: food.fiber_g,
+    is_belgian_market: true,
+  };
+}
+
+const MAX_RESULTS = 10;
+
+/**
+ * Zoekt de statische, tweetalige generieke-voedingcatalogus (`data/generic-foods.ts`) volledig in
+ * het geheugen — geen databasetoegang, dus geen enkele boot- of round-trip-kost. Rangschikt
+ * treffers: exacte naam (NL of FR) eerst op populariteit, dan de rest op tekstgelijkenis
+ * (Levenshtein-gebaseerd, zie `string-similarity.ts`), met populariteit/alfabetisch als tiebreak.
+ */
+export function searchGenericFoods(query: string): ProductDto[] {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length === 0) return [];
+
+  const matches = GENERIC_FOODS.filter(
+    (food) => food.name.toLowerCase().includes(normalized) || food.nameFr.toLowerCase().includes(normalized)
+  );
+  if (matches.length === 0) return [];
+
+  const ranked = matches
+    .map((food) => {
+      const isExactMatch = food.name.toLowerCase() === normalized || food.nameFr.toLowerCase() === normalized;
+      const similarity = Math.max(stringSimilarity(normalized, food.name), stringSimilarity(normalized, food.nameFr));
+      return { food, isExactMatch, similarity };
+    })
+    .sort((a, b) => {
+      if (a.isExactMatch !== b.isExactMatch) return a.isExactMatch ? -1 : 1;
+      if (a.isExactMatch) return b.food.popularity - a.food.popularity;
+      if (b.similarity !== a.similarity) return b.similarity - a.similarity;
+      if (b.food.popularity !== a.food.popularity) return b.food.popularity - a.food.popularity;
+      return a.food.name.localeCompare(b.food.name);
+    });
+
+  return ranked.map((entry) => genericToDto(entry.food));
+}
+
+/**
+ * Zoekt in de Postgres `meal_catalog`-cache (merkproducten/eerdere Open Food Facts-treffers) op
+ * exacte barcode of een niet-hoofdlettergevoelige deelmatch op naam/merk. Schema en gedrag
+ * ongewijzigd t.o.v. voor de tweetalige uitbreiding: dit is enkel de bestaande cache, niet de
+ * generieke catalogus (die staat sinds deze uitbreiding los in `data/generic-foods.ts`).
+ */
+async function searchCache(query: string): Promise<ProductDto[]> {
+  const rows = await MealCatalogItem.findAll({
     where: {
       [Op.or]: [{ barcode: query }, { name: { [Op.iLike]: `%${query}%` } }, { brand: { [Op.iLike]: `%${query}%` } }],
     },
+    limit: MAX_RESULTS,
   });
+  return rows.map(toDto);
 }
 
 /** Cachet een Open Food Facts-treffer; bij een race op eenzelfde barcode wordt de bestaande rij teruggegeven. */
@@ -75,24 +126,33 @@ async function cacheExternalProduct(product: openFoodFacts.OpenFoodFactsProduct)
 }
 
 /**
- * Zoekt een product op naam of barcode. Zoekt eerst in de Postgres `meal_catalog`-cache; bij een
- * cache-miss volgt een echte Open Food Facts-lookup (barcode-exact of vrije tekst, zie
- * `open-food-facts.service.ts`) waarvan het resultaat automatisch gecachet wordt voor volgende
- * zoekopdrachten. Een tijdelijk onbereikbare Open Food Facts-API wordt behandeld als "niet
- * gevonden" in plaats van de hele zoekopdracht te laten crashen.
+ * Zoekt producten op naam (Nederlands of Frans) of barcode. Combineert twee bronnen: de statische
+ * generieke catalogus (in-memory, tweetalig) en de Postgres `meal_catalog`-cache (merkproducten en
+ * eerdere Open Food Facts-treffers). Bij nul lokale treffers in beide volgt één Open Food
+ * Facts-lookup waarvan het resultaat automatisch gecachet wordt voor volgende zoekopdrachten. Een
+ * tijdelijk onbereikbare Open Food Facts wordt behandeld als "geen resultaten" in plaats van de
+ * hele zoekopdracht te laten crashen.
  *
  * Handmatig zoeken is een kernfunctie van de gratis laag: bewust geen premium-abonnement of
  * GDPR-consent vereist (de catalogus bevat geen persoonsgegevens van de gebruiker).
  */
-export async function searchProduct(queryOrBarcode: string): Promise<ProductDto> {
+export async function searchProduct(queryOrBarcode: string): Promise<ProductDto[]> {
   const trimmed = queryOrBarcode.trim();
   if (trimmed.length === 0) {
-    throw new ProductNotFoundError(queryOrBarcode);
+    return [];
   }
 
-  const cached = await findInCache(trimmed);
-  if (cached) {
-    return toDto(cached);
+  const generic = searchGenericFoods(trimmed);
+  const cached = await searchCache(trimmed);
+
+  const genericNames = new Set(generic.map((item) => item.name.toLowerCase()));
+  const combined = [...generic, ...cached.filter((item) => !genericNames.has(item.name.toLowerCase()))].slice(
+    0,
+    MAX_RESULTS
+  );
+
+  if (combined.length > 0) {
+    return combined;
   }
 
   let external: openFoodFacts.OpenFoodFactsProduct | null;
@@ -100,14 +160,14 @@ export async function searchProduct(queryOrBarcode: string): Promise<ProductDto>
     external = await openFoodFacts.findProduct(trimmed);
   } catch {
     // Open Food Facts is een externe, niet altijd beschikbare dienst; een storing daar mag de
-    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon "niet gevonden".
+    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon een lege resultatenlijst.
     external = null;
   }
 
   if (!external) {
-    throw new ProductNotFoundError(queryOrBarcode);
+    return [];
   }
 
   const cachedItem = await cacheExternalProduct(external);
-  return toDto(cachedItem);
+  return [toDto(cachedItem)];
 }

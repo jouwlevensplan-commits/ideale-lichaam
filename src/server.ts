@@ -26,19 +26,25 @@ export function createServer() {
 if (require.main === module) {
   const app = createServer();
 
-  // De PostgreSQL-tabellen worden bij het opstarten aangemaakt/gesynchroniseerd (databaseplan §8),
-  // vóór de server verkeer aanneemt op de API-routes die ze nodig hebben.
+  // De HTTP-server start altijd, ongeacht of de databasestappen hieronder lukken: GET /health mag
+  // nooit afhankelijk zijn van Postgres, en een mislukte sync/seed mag de container nooit laten
+  // crashen (drie eerdere productie-uitvallen op de 0,1 vCPU / 256MB Northflank-container kwamen
+  // stuk voor stuk uit deze boot-keten — zie git-geschiedenis). API-routes die wél een database
+  // nodig hebben falen dan gewoon per request met een 500, in plaats van de hele server plat te
+  // leggen.
+  app.listen(PORT, () => {
+    console.log(`Server luistert op poort ${PORT}`);
+  });
+
+  // De PostgreSQL-tabellen worden op de achtergrond aangemaakt/gesynchroniseerd (databaseplan §8)
+  // en van seed-data voorzien; dit blokkeert het luisteren op `PORT` bewust niet meer.
   connectDatabase()
     .then(() => syncDatabase())
     .then(() => runSeeds())
     .then(() => {
       console.log('Databaseverbinding gelegd, tabellen gesynchroniseerd en seed-data toegepast.');
-      app.listen(PORT, () => {
-        console.log(`Server luistert op poort ${PORT}`);
-      });
     })
     .catch((error) => {
-      console.error('Kon niet opstarten: databaseverbinding, -synchronisatie of seed is mislukt.', error);
-      process.exit(1);
+      console.error('Databaseverbinding, -synchronisatie of seed is mislukt; server blijft draaien.', error);
     });
 }

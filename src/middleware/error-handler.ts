@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
 import { BadRequestError, ConsentRequiredError } from '../db/errors';
-import { ProductNotFoundError } from '../services/product.service';
 
 /**
  * Centrale foutafhandeling voor de API-routes. Express 5 stuurt afgewezen promises uit
@@ -16,11 +15,6 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
 
   if (error instanceof ConsentRequiredError) {
     res.status(403).json({ error: 'health_data_consent_required', message: error.message });
-    return;
-  }
-
-  if (error instanceof ProductNotFoundError) {
-    res.status(404).json({ error: 'product_not_found', message: error.message });
     return;
   }
 
