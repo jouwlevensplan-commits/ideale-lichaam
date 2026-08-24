@@ -15,10 +15,7 @@ import { sequelize } from '../client';
 export class MealCatalogItem extends Model<InferAttributes<MealCatalogItem>, InferCreationAttributes<MealCatalogItem>> {
   declare id: CreationOptional<string>;
   declare barcode: string | null;
-  /** Primaire (Nederlandstalige) naam. */
   declare name: string;
-  /** Franstalige naam, indien bekend. Zelfde rij als `name` — één canoniek record per voedingsmiddel. */
-  declare name_fr: string | null;
   declare brand: string | null;
   declare calories_kcal: number;
   declare protein_g: number;
@@ -26,8 +23,6 @@ export class MealCatalogItem extends Model<InferAttributes<MealCatalogItem>, Inf
   declare fat_g: number;
   declare fiber_g: number;
   declare is_belgian_market: CreationOptional<boolean>;
-  /** Ruwe teller (mock voor nu, zie db/seeds/meal-catalog.seed.ts) gebruikt om zoekresultaten te ranken. */
-  declare popularity: CreationOptional<number>;
   declare readonly created_at: CreationOptional<Date>;
 }
 
@@ -44,7 +39,6 @@ MealCatalogItem.init(
       unique: true,
     },
     name: { type: DataTypes.STRING, allowNull: false },
-    name_fr: { type: DataTypes.STRING, allowNull: true },
     brand: { type: DataTypes.STRING, allowNull: true },
     calories_kcal: { type: DataTypes.DECIMAL(8, 2), allowNull: false },
     protein_g: { type: DataTypes.DECIMAL(8, 2), allowNull: false },
@@ -56,11 +50,6 @@ MealCatalogItem.init(
       allowNull: false,
       defaultValue: false,
     },
-    popularity: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
     created_at: DataTypes.DATE,
   },
   {
@@ -71,6 +60,6 @@ MealCatalogItem.init(
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: false,
-    indexes: [{ fields: ['name'] }, { fields: ['name_fr'] }, { fields: ['brand'] }],
+    indexes: [{ fields: ['name'] }, { fields: ['brand'] }],
   }
 );

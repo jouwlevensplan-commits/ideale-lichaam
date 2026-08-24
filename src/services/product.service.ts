@@ -1,8 +1,14 @@
-import { QueryTypes } from 'sequelize';
+import { Op } from 'sequelize';
 
-import { isTrigramSearchEnabled } from '../db/migrations';
-import { MealCatalogItem, sequelize } from '../db/models';
+import { MealCatalogItem } from '../db/models';
 import * as openFoodFacts from './open-food-facts.service';
+
+export class ProductNotFoundError extends Error {
+  constructor(query: string) {
+    super(`Geen product gevonden voor "${query}", ook niet via Open Food Facts.`);
+    this.name = 'ProductNotFoundError';
+  }
+}
 
 function toPlainNumber(value: number | string): number {
   return typeof value === 'number' ? value : Number(value);
@@ -36,79 +42,13 @@ function toDto(row: MealCatalogItem): ProductDto {
   };
 }
 
-const MAX_RESULTS = 10;
-const TRIGRAM_SIMILARITY_THRESHOLD = 0.25;
-
-interface CatalogRow {
-  id: string;
-  barcode: string | null;
-  name: string;
-  brand: string | null;
-  calories_kcal: string;
-  protein_g: string;
-  carbs_g: string;
-  fat_g: string;
-  fiber_g: string;
-  is_belgian_market: boolean;
-}
-
-/**
- * Zoekt in `meal_catalog` op zowel de Nederlandstalige (`name`) als Franstalige (`name_fr`) naam,
- * of een exacte barcode — één canoniek record per voedingsmiddel dekt dus altijd beide talen.
- * Rangschikt: exacte barcode/naam eerst, dan Belgische-marktproducten, dan (als `pg_trgm`
- * beschikbaar is, zie db/migrations/index.ts) tekstgelijkenis voor tolerante/tikfout-vergevende
- * matching, dan populariteit (databaseplan §3.6 e.v. — hier een proxy voor loggebruik), en tot
- * slot alfabetisch.
- */
-async function searchCatalogRanked(query: string): Promise<ProductDto[]> {
-  const likePattern = `%${query}%`;
-  const replacements = { query, likePattern, threshold: TRIGRAM_SIMILARITY_THRESHOLD, limit: MAX_RESULTS };
-
-  const sql = isTrigramSearchEnabled()
-    ? `
-      SELECT id, barcode, name, brand, calories_kcal, protein_g, carbs_g, fat_g, fiber_g, is_belgian_market
-      FROM meal_catalog
-      WHERE barcode = :query
-         OR name ILIKE :likePattern
-         OR name_fr ILIKE :likePattern
-         OR similarity(name, :query) > :threshold
-         OR similarity(COALESCE(name_fr, ''), :query) > :threshold
-      ORDER BY
-        (barcode = :query) DESC,
-        (LOWER(name) = LOWER(:query) OR LOWER(COALESCE(name_fr, '')) = LOWER(:query)) DESC,
-        is_belgian_market DESC,
-        GREATEST(similarity(name, :query), similarity(COALESCE(name_fr, ''), :query)) DESC,
-        popularity DESC,
-        name ASC
-      LIMIT :limit
-    `
-    : `
-      SELECT id, barcode, name, brand, calories_kcal, protein_g, carbs_g, fat_g, fiber_g, is_belgian_market
-      FROM meal_catalog
-      WHERE barcode = :query OR name ILIKE :likePattern OR name_fr ILIKE :likePattern
-      ORDER BY
-        (barcode = :query) DESC,
-        (LOWER(name) = LOWER(:query) OR LOWER(COALESCE(name_fr, '')) = LOWER(:query)) DESC,
-        is_belgian_market DESC,
-        popularity DESC,
-        name ASC
-      LIMIT :limit
-    `;
-
-  const rows = await sequelize.query<CatalogRow>(sql, { type: QueryTypes.SELECT, replacements });
-
-  return rows.map((row) => ({
-    id: row.id,
-    barcode: row.barcode,
-    name: row.name,
-    brand: row.brand,
-    calories_kcal: toPlainNumber(row.calories_kcal),
-    protein_g: toPlainNumber(row.protein_g),
-    carbs_g: toPlainNumber(row.carbs_g),
-    fat_g: toPlainNumber(row.fat_g),
-    fiber_g: toPlainNumber(row.fiber_g),
-    is_belgian_market: row.is_belgian_market,
-  }));
+/** Exacte barcode-match, of een niet-hoofdlettergevoelige deelmatch op naam/merk. */
+async function findInCache(query: string): Promise<MealCatalogItem | null> {
+  return MealCatalogItem.findOne({
+    where: {
+      [Op.or]: [{ barcode: query }, { name: { [Op.iLike]: `%${query}%` } }, { brand: { [Op.iLike]: `%${query}%` } }],
+    },
+  });
 }
 
 /** Cachet een Open Food Facts-treffer; bij een race op eenzelfde barcode wordt de bestaande rij teruggegeven. */
@@ -117,7 +57,6 @@ async function cacheExternalProduct(product: openFoodFacts.OpenFoodFactsProduct)
     return await MealCatalogItem.create({
       barcode: product.barcode,
       name: product.name,
-      name_fr: product.name_fr,
       brand: product.brand,
       calories_kcal: product.calories_kcal,
       protein_g: product.protein_g,
@@ -136,24 +75,24 @@ async function cacheExternalProduct(product: openFoodFacts.OpenFoodFactsProduct)
 }
 
 /**
- * Zoekt producten op naam (Nederlands of Frans) of barcode. Zoekt eerst, gerangschikt, in de
- * Postgres `meal_catalog`-cache; bij nul lokale treffers volgt één Open Food Facts-lookup
- * (barcode-exact of vrije tekst, zie `open-food-facts.service.ts`) waarvan het resultaat
- * automatisch gecachet wordt voor volgende zoekopdrachten. Een tijdelijk onbereikbare Open Food
- * Facts wordt behandeld als "geen resultaten" in plaats van de hele zoekopdracht te laten crashen.
+ * Zoekt een product op naam of barcode. Zoekt eerst in de Postgres `meal_catalog`-cache; bij een
+ * cache-miss volgt een echte Open Food Facts-lookup (barcode-exact of vrije tekst, zie
+ * `open-food-facts.service.ts`) waarvan het resultaat automatisch gecachet wordt voor volgende
+ * zoekopdrachten. Een tijdelijk onbereikbare Open Food Facts-API wordt behandeld als "niet
+ * gevonden" in plaats van de hele zoekopdracht te laten crashen.
  *
  * Handmatig zoeken is een kernfunctie van de gratis laag: bewust geen premium-abonnement of
  * GDPR-consent vereist (de catalogus bevat geen persoonsgegevens van de gebruiker).
  */
-export async function searchProduct(queryOrBarcode: string): Promise<ProductDto[]> {
+export async function searchProduct(queryOrBarcode: string): Promise<ProductDto> {
   const trimmed = queryOrBarcode.trim();
   if (trimmed.length === 0) {
-    return [];
+    throw new ProductNotFoundError(queryOrBarcode);
   }
 
-  const localMatches = await searchCatalogRanked(trimmed);
-  if (localMatches.length > 0) {
-    return localMatches;
+  const cached = await findInCache(trimmed);
+  if (cached) {
+    return toDto(cached);
   }
 
   let external: openFoodFacts.OpenFoodFactsProduct | null;
@@ -161,14 +100,14 @@ export async function searchProduct(queryOrBarcode: string): Promise<ProductDto[
     external = await openFoodFacts.findProduct(trimmed);
   } catch {
     // Open Food Facts is een externe, niet altijd beschikbare dienst; een storing daar mag de
-    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon een lege resultatenlijst.
+    // eigen zoekfunctie niet laten crashen. De gebruiker ziet gewoon "niet gevonden".
     external = null;
   }
 
   if (!external) {
-    return [];
+    throw new ProductNotFoundError(queryOrBarcode);
   }
 
   const cachedItem = await cacheExternalProduct(external);
-  return [toDto(cachedItem)];
+  return toDto(cachedItem);
 }
