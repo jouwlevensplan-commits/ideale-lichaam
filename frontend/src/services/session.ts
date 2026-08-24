@@ -84,7 +84,12 @@ export function addEarnedBadges(badgeKeys: string[]): void {
 // app tot die tijd toch visueel te kunnen testen, schrijft `loginAsDemoUser()` een volledig
 // gemockte sessie rechtstreeks naar AsyncStorage, buiten de server om.
 
-const DEMO_USER_ID = 'demo-11111111-1111-4111-8111-111111111111';
+// Moet een geldige UUID zijn (en exact overeenkomen met `DEMO_USER_ID` in de backend-seed,
+// src/db/seeds/demo-user.seed.ts) — de backend valideert de `X-User-Id`-header tegen een strikt
+// UUID-patroon en negeert/vervangt elke niet-conforme waarde stilzwijgend door een gloednieuwe
+// willekeurige gebruiker. Een niet-UUID-achtige demo-ID zou de demo-sessie dus nooit een stabiele
+// identiteit op de server geven, ongeacht welke consent daar voor die ID staat.
+const DEMO_USER_ID = '11111111-1111-4111-8111-111111111111';
 
 /** True als `userId` de gemockte demo-gebruiker "Sam" is (zie `loginAsDemoUser`), niet een echt account. */
 export function isDemoUserId(userId: string | null): boolean {

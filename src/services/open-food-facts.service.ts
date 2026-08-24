@@ -71,7 +71,10 @@ export function mapOpenFoodFactsProduct(raw: unknown): OpenFoodFactsProduct | nu
   if (typeof raw !== 'object' || raw === null) return null;
   const product = raw as Record<string, unknown>;
 
+  // Nederlandstalige naam eerst (relevant voor onze Belgische markt), dan de gelokaliseerde naam
+  // die `lc=nl` al meegaf in `product_name`, dan Engels/generiek als laatste terugvaloptie.
   const name =
+    (typeof product.product_name_nl === 'string' && product.product_name_nl.trim()) ||
     (typeof product.product_name === 'string' && product.product_name.trim()) ||
     (typeof product.product_name_en === 'string' && product.product_name_en.trim()) ||
     (typeof product.generic_name === 'string' && product.generic_name.trim()) ||
@@ -106,9 +109,15 @@ export function mapOpenFoodFactsProduct(raw: unknown): OpenFoodFactsProduct | nu
   };
 }
 
+// `lc=nl` vraagt Nederlandstalige productvelden op (relevant voor namen/taxonomie), `cc=be` stelt
+// Open Food Facts' landcontext in op België, wat de Belgische markt prioriteert in de resultaten
+// zonder niet-Belgische producten volledig uit te sluiten.
+const LOCALIZATION_PARAMS = { lc: 'nl', cc: 'be' } as const;
+
 /** Exacte barcode-opzoeking via de Open Food Facts v2 product-API. */
 export async function lookupByBarcode(barcode: string): Promise<OpenFoodFactsProduct | null> {
-  const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`;
+  const params = new URLSearchParams(LOCALIZATION_PARAMS);
+  const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?${params.toString()}`;
   const data = (await fetchJson(url)) as { status?: number; product?: unknown };
 
   if (data.status !== 1 || !data.product) {
@@ -117,7 +126,11 @@ export async function lookupByBarcode(barcode: string): Promise<OpenFoodFactsPro
   return mapOpenFoodFactsProduct(data.product);
 }
 
-/** Vrije-tekstzoekopdracht; geeft de eerste bruikbare (naam + calorieën) treffer terug, of `null`. */
+/**
+ * Vrije-tekstzoekopdracht. Geeft, onder de bruikbare (naam + calorieën) treffers, de eerste
+ * Belgische markt-match terug; valt terug op de eerste bruikbare treffer in het algemeen als er
+ * geen Belgische tussen zit. `null` als er helemaal niets bruikbaars terugkomt.
+ */
 export async function searchByText(query: string): Promise<OpenFoodFactsProduct | null> {
   const params = new URLSearchParams({
     search_terms: query,
@@ -125,16 +138,17 @@ export async function searchByText(query: string): Promise<OpenFoodFactsProduct 
     action: 'process',
     json: '1',
     page_size: '10',
+    ...LOCALIZATION_PARAMS,
   });
   const url = `https://world.openfoodfacts.org/cgi/search.pl?${params.toString()}`;
   const data = (await fetchJson(url)) as { products?: unknown[] };
 
   const candidates = Array.isArray(data.products) ? data.products : [];
-  for (const candidate of candidates) {
-    const mapped = mapOpenFoodFactsProduct(candidate);
-    if (mapped) return mapped;
-  }
-  return null;
+  const usable = candidates
+    .map(mapOpenFoodFactsProduct)
+    .filter((product): product is OpenFoodFactsProduct => product !== null);
+
+  return usable.find((product) => product.is_belgian_market) ?? usable[0] ?? null;
 }
 
 /** Zoekt op barcode of vrije tekst, afhankelijk van het opgegeven patroon van `queryOrBarcode`. */

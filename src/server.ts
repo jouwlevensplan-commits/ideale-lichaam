@@ -2,6 +2,7 @@ import express from 'express';
 
 import { connectDatabase } from './db/client';
 import { syncDatabase } from './db/models';
+import { runSeeds } from './db/seeds';
 import { errorHandler } from './middleware/error-handler';
 import { apiRouter } from './routes';
 
@@ -29,14 +30,15 @@ if (require.main === module) {
   // vóór de server verkeer aanneemt op de API-routes die ze nodig hebben.
   connectDatabase()
     .then(() => syncDatabase())
+    .then(() => runSeeds())
     .then(() => {
-      console.log('Databaseverbinding gelegd en tabellen gesynchroniseerd.');
+      console.log('Databaseverbinding gelegd, tabellen gesynchroniseerd en seed-data toegepast.');
       app.listen(PORT, () => {
         console.log(`Server luistert op poort ${PORT}`);
       });
     })
     .catch((error) => {
-      console.error('Kon niet opstarten: databaseverbinding of -synchronisatie is mislukt.', error);
+      console.error('Kon niet opstarten: databaseverbinding, -synchronisatie of seed is mislukt.', error);
       process.exit(1);
     });
 }
