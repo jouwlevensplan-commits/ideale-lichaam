@@ -20,8 +20,15 @@ export function isTrigramSearchEnabled(): boolean {
  * het zoeken werken met gewone `ILIKE`-matching, alleen zonder typo-tolerantie.
  */
 export async function runMigrations(): Promise<void> {
-  await sequelize.query('ALTER TABLE meal_catalog ADD COLUMN IF NOT EXISTS name_fr VARCHAR(255)');
-  await sequelize.query('ALTER TABLE meal_catalog ADD COLUMN IF NOT EXISTS popularity INTEGER NOT NULL DEFAULT 0');
+  try {
+    await sequelize.query('ALTER TABLE meal_catalog ADD COLUMN IF NOT EXISTS name_fr VARCHAR(255)');
+    await sequelize.query('ALTER TABLE meal_catalog ADD COLUMN IF NOT EXISTS popularity INTEGER NOT NULL DEFAULT 0');
+  } catch (error) {
+    // Nooit de opstart blokkeren op een schemawijziging die niet essentieel is om te kunnen
+    // draaien: zonder deze kolommen werkt de rest van de server nog steeds, alleen de
+    // tweetalige/populariteitsfuncties in de zoekopdracht niet.
+    console.warn('Kon meal_catalog niet uitbreiden met name_fr/popularity.', error);
+  }
 
   try {
     await sequelize.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
