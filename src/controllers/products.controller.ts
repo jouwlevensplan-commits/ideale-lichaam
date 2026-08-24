@@ -2,9 +2,9 @@ import type { Request, Response } from 'express';
 
 import * as productService from '../services/product.service';
 import { BadRequestError } from '../db/errors';
-import type { MealCatalogItem } from '../types/database.types';
+import type { ProductDto } from '../services/product.service';
 
-function mapProduct(product: MealCatalogItem) {
+function mapProduct(product: ProductDto) {
   return {
     id: product.id,
     barcode: product.barcode,

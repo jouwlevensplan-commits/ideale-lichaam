@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type {
@@ -13,7 +14,6 @@ import type {
   WeeklyReport,
   Streak,
   Badge,
-  MealCatalogItem,
   UserStatus,
   JsonValue,
 } from '../types/database.types';
@@ -30,7 +30,6 @@ interface StorageSchema {
   weeklyReports: WeeklyReport[];
   streaks: Streak[];
   badges: Badge[];
-  mealCatalog: MealCatalogItem[];
 }
 
 const EMPTY_STORE: StorageSchema = {
@@ -45,11 +44,17 @@ const EMPTY_STORE: StorageSchema = {
   weeklyReports: [],
   streaks: [],
   badges: [],
-  mealCatalog: [],
 };
 
+/**
+ * Standaard `/tmp/storage.json` (niet `/app/storage.json`): in de Docker-productie-image draait de
+ * server als niet-root `node`-gebruiker zonder schrijfrechten op `/app`, waardoor het eerste
+ * schrijven daar met een 500 crasht. `/tmp` is in vrijwel elke container-runtime altijd schrijfbaar,
+ * ongeacht gebruikersrechten. `STORAGE_FILE_PATH` blijft bruikbaar om dit te overschrijven (bv. in
+ * tests, die elk een eigen tijdelijke map gebruiken).
+ */
 function getStorageFilePath(): string {
-  return process.env.STORAGE_FILE_PATH ?? path.resolve(__dirname, '../../storage.json');
+  return process.env.STORAGE_FILE_PATH ?? path.join(os.tmpdir(), 'maaltijdtracker-storage.json');
 }
 
 export class GdprConsentError extends Error {
@@ -86,7 +91,6 @@ async function readStore(): Promise<StorageSchema> {
       weeklyReports: parsed.weeklyReports ?? [],
       streaks: parsed.streaks ?? [],
       badges: parsed.badges ?? [],
-      mealCatalog: parsed.mealCatalog ?? [],
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -244,54 +248,6 @@ export async function setAdConsent(
 
   await writeStore(store);
   return user;
-}
-
-// --- MealCatalogItem ---
-// Gedeelde productcatalogus (barcode-lookup / suggestiemaaltijden), niet gekoppeld aan een
-// specifieke gebruiker en dus niet GDPR-gated.
-
-export type CreateMealCatalogItemInput = Omit<MealCatalogItem, 'id' | 'created_at'>;
-
-export async function createMealCatalogItem(item: CreateMealCatalogItemInput): Promise<MealCatalogItem> {
-  const store = await readStore();
-
-  if (item.barcode !== null) {
-    const duplicate = store.mealCatalog.some((c) => c.barcode === item.barcode);
-    if (duplicate) {
-      throw new Error(`Er bestaat al een catalogusitem met barcode "${item.barcode}".`);
-    }
-  }
-
-  const catalogItem: MealCatalogItem = {
-    id: randomUUID(),
-    created_at: new Date().toISOString(),
-    ...item,
-  };
-
-  store.mealCatalog.push(catalogItem);
-  await writeStore(store);
-  return catalogItem;
-}
-
-/** Zoekt op exacte barcode of op een deel van de naam/het merk (niet hoofdlettergevoelig). */
-export async function searchMealCatalog(query: string): Promise<MealCatalogItem[]> {
-  const store = await readStore();
-  const trimmed = query.trim();
-  if (trimmed.length === 0) return [];
-
-  const normalized = trimmed.toLowerCase();
-  return store.mealCatalog.filter((item) => {
-    const name = item.name.toLowerCase();
-    const brand = item.brand?.toLowerCase() ?? '';
-    const combined = `${brand} ${name}`.trim();
-
-    return (
-      item.barcode === trimmed ||
-      name.includes(normalized) ||
-      brand.includes(normalized) ||
-      combined.includes(normalized)
-    );
-  });
 }
 
 // --- UserProfile ---

@@ -6,6 +6,7 @@ import { DailyTarget } from './daily-target.model';
 import { WeeklyGoal } from './weekly-goal.model';
 import { MealLog } from './meal-log.model';
 import { MealItem } from './meal-item.model';
+import { MealCatalogItem } from './meal-catalog-item.model';
 
 // --- Associaties (databaseplan §5) ---
 
@@ -31,7 +32,10 @@ MealLog.belongsTo(User, { foreignKey: 'user_id' });
 MealLog.hasMany(MealItem, { foreignKey: 'meal_log_id', onDelete: 'CASCADE' });
 MealItem.belongsTo(MealLog, { foreignKey: 'meal_log_id' });
 
-export { sequelize, User, UserProfile, Goal, DailyTarget, WeeklyGoal, MealLog, MealItem };
+// MealCatalogItem heeft bewust geen associaties: het is geen gebruikersgebonden entiteit (zie het
+// model zelf voor de toelichting waarom dit in Postgres staat i.p.v. het lokale storage.json).
+
+export { sequelize, User, UserProfile, Goal, DailyTarget, WeeklyGoal, MealLog, MealItem, MealCatalogItem };
 
 /**
  * Maakt de MVP-kerntabellen aan als ze nog niet bestaan (of past ontbrekende kolommen/indexen toe).
