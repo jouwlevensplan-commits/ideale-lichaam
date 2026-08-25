@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -58,28 +58,34 @@ export default function HomeDashboardScreen() {
   const [totals, setTotals] = useState<DashboardTotals>(ZERO_TOTALS);
   const [todaysMeals, setTodaysMeals] = useState<MealLog[]>([]);
 
-  useEffect(() => {
-    apiService
-      .getTodayDashboard()
-      .then((response) => {
-        // Geen daily_target in Postgres (bv. de demo-gebruiker, die de echte onboarding nooit
-        // doorloopt): val terug op de sessie-waarde in plaats van de kaart leeg te tonen.
-        setDailyTarget(response.dailyTarget ?? sessionDailyTarget);
-        setTotals(response.totals);
-        setTodaysMeals(response.mealLogs);
-      })
-      .catch(() => {
-        // Stil falen: de kaart blijft de sessie-waarden tonen die al beschikbaar waren.
-      });
+  // useFocusEffect (i.p.v. een gewone useEffect) zodat dit ook opnieuw ophaalt telkens de
+  // gebruiker terugkeert naar dit tabblad — bv. net na het loggen van een maaltijd in het
+  // Eetdagboek (zie app/(tabs)/diary.tsx), dat na het loggen hierheen navigeert. Tabbladschermen
+  // blijven in Expo Router gemount, dus een gewone useEffect met een lege dependency-array zou
+  // hier maar één keer vuren en de calorieënring/macrobalken zouden nooit meer verversen.
+  useFocusEffect(
+    useCallback(() => {
+      apiService
+        .getTodayDashboard()
+        .then((response) => {
+          // Geen daily_target in Postgres (bv. de demo-gebruiker, die de echte onboarding nooit
+          // doorloopt): val terug op de sessie-waarde in plaats van de kaart leeg te tonen.
+          setDailyTarget(response.dailyTarget ?? sessionDailyTarget);
+          setTotals(response.totals);
+          setTodaysMeals(response.mealLogs);
+        })
+        .catch(() => {
+          // Stil falen: de kaart blijft de sessie-/vorige waarden tonen die al beschikbaar waren.
+        });
 
-    apiService
-      .getDashboardStreak()
-      .then(({ currentLength }) => setStreakLength(currentLength))
-      .catch(() => {
-        // Stil falen: de streak-indicator is decoratief, geen kritiek pad.
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      apiService
+        .getDashboardStreak()
+        .then(({ currentLength }) => setStreakLength(currentLength))
+        .catch(() => {
+          // Stil falen: de streak-indicator is decoratief, geen kritiek pad.
+        });
+    }, [sessionDailyTarget])
+  );
 
   const caloriesGoal = dailyTarget?.caloriesKcal ?? 2000;
   const proteinGoal = dailyTarget?.proteinG ?? 130;

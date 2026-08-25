@@ -1,4 +1,4 @@
-import { Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, StatusColors } from '@/constants/theme';
@@ -13,6 +13,8 @@ export interface ButtonProps {
   /** Tekstkleur; standaard afgeleid van de variant. */
   textColor?: string;
   disabled?: boolean;
+  /** Toont een spinner in plaats van `label` en gedraagt zich als `disabled` (voorkomt dubbele indrukken tijdens een lopende API-aanroep). */
+  loading?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -22,29 +24,33 @@ export interface ButtonProps {
  * `color` verschilt) — gebruik dit patroon voor "Weiger"/"Accepteer"-paren om dark patterns
  * te vermijden.
  */
-export function Button({ label, onPress, variant = 'solid', color, textColor, disabled, style }: ButtonProps) {
+export function Button({ label, onPress, variant = 'solid', color, textColor, disabled, loading, style }: ButtonProps) {
   const accent = color ?? StatusColors.accent;
+  const isDisabled = disabled || loading;
+  const labelColor = variant === 'solid' ? (textColor ?? '#FFFFFF') : (textColor ?? accent);
 
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
+      accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
       style={({ pressed }) => [
         styles.base,
         variant === 'solid' && { backgroundColor: accent },
         variant === 'outline' && [styles.outline, { borderColor: accent }],
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
+        isDisabled && styles.disabled,
+        pressed && !isDisabled && styles.pressed,
         style,
       ]}>
-      <ThemedText
-        type="smallBold"
-        style={[styles.label, { color: variant === 'solid' ? (textColor ?? '#FFFFFF') : (textColor ?? accent) }]}>
-        {label}
-      </ThemedText>
+      {loading ? (
+        <ActivityIndicator color={labelColor} size="small" />
+      ) : (
+        <ThemedText type="smallBold" style={[styles.label, { color: labelColor }]}>
+          {label}
+        </ThemedText>
+      )}
     </Pressable>
   );
 }

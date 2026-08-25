@@ -58,14 +58,31 @@ async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ApiError(`Kon geen verbinding maken met de server (${path}): ${reason}`);
+    // Geen verbinding (offline, DNS, timeout, ...): de ruwe reden (`error.message`) is intern
+    // nuttig maar niet iets een gebruiker moet lezen, dus enkel loggen en een vaste, vriendelijke
+    // boodschap tonen.
+    console.warn(`Netwerkfout bij ${method} ${path}:`, error);
+    throw new ApiError('Kon geen verbinding maken met de server. Controleer je internetverbinding en probeer het opnieuw.');
   }
 
   if (!response.ok) {
-    const message = await response.text().catch(() => '');
+    const bodyText = await response.text().catch(() => '');
+    // De backend stuurt foutrespons als JSON ({ error, message }, zie middleware/error-handler.ts)
+    // met een al-Nederlandstalige, gebruiksklare `message`; die geven we door in plaats van de
+    // ruwe JSON-tekst te tonen. Alleen als het antwoord geen geldige JSON is (bv. een onverwachte
+    // 502 van een proxy) valt dit terug op een generieke boodschap.
+    let friendlyMessage: string | undefined;
+    try {
+      const parsed = JSON.parse(bodyText) as { message?: unknown };
+      if (typeof parsed.message === 'string' && parsed.message.trim().length > 0) {
+        friendlyMessage = parsed.message;
+      }
+    } catch {
+      // Geen JSON-body: negeren, val terug op de generieke boodschap hieronder.
+    }
+
     throw new ApiError(
-      `API-aanroep ${method} ${path} mislukt (status ${response.status}). ${message}`.trim(),
+      friendlyMessage ?? `Er ging iets mis (foutcode ${response.status}). Probeer het later opnieuw.`,
       response.status
     );
   }
