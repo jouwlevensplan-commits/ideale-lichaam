@@ -8,6 +8,8 @@ import type {
   RecognizePhotoPayload,
   RecognizeVoicePayload,
   SetAdConsentPayload,
+  StreakResponse,
+  TodayDashboardResponse,
   UpdateStreaksResponse,
   UserAccount,
   WeeklyReport,
@@ -126,6 +128,17 @@ export async function getWeeklyReport(weekStartDate: string): Promise<WeeklyRepo
 
 export async function updateStreaks(): Promise<UpdateStreaksResponse> {
   return apiFetch<UpdateStreaksResponse>('/api/coach/streaks/update', { method: 'POST' });
+}
+
+// --- 7. Dashboard: vandaag & streak ---------------------------------------------
+
+/** Doel, dagtotalen (som van vandaag gelogde meal_items) en de lijst van vandaag gelogde maaltijden (met items). */
+export async function getTodayDashboard(): Promise<TodayDashboardResponse> {
+  return apiFetch<TodayDashboardResponse>('/api/dashboard/today');
+}
+
+export async function getDashboardStreak(): Promise<StreakResponse> {
+  return apiFetch<StreakResponse>('/api/dashboard/streak');
 }
 
 // --- Consent-beheer -------------------------------------------------------------

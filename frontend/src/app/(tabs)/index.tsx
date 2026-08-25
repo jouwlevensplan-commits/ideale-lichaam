@@ -15,33 +15,70 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import * as apiService from '@/services/api.service';
-import { addEarnedBadges, useSession } from '@/services/session';
+import { useSession } from '@/services/session';
+import type { DailyTarget, DashboardTotals, MealLog } from '@/types/api.types';
 
 const TODAY_FORMATTER = new Intl.DateTimeFormat('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' });
 
+const MEAL_TYPE_ICON: Record<string, string> = {
+  breakfast: '🥣',
+  lunch: '🥗',
+  dinner: '🍽️',
+  snack: '🍎',
+};
+const MEAL_TYPE_LABEL: Record<string, string> = {
+  breakfast: 'Ontbijt',
+  lunch: 'Lunch',
+  dinner: 'Diner',
+  snack: 'Snack',
+};
+const ZERO_TOTALS: DashboardTotals = { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 };
+
+/** Vertaalt één `meal_log` (met items) naar wat `MealLogRow` nodig heeft voor de "Vandaag gelogd"-lijst. */
+function summarizeMealLog(log: MealLog): { icon: string; name: string; subtitle: string; caloriesKcal: number } {
+  return {
+    icon: (log.mealType && MEAL_TYPE_ICON[log.mealType]) || '🍴',
+    name: log.items.map((item) => item.name).join(', ') || 'Maaltijd',
+    subtitle: (log.mealType && MEAL_TYPE_LABEL[log.mealType]) || 'Maaltijd',
+    caloriesKcal: log.items.reduce((total, item) => total + item.caloriesKcal, 0),
+  };
+}
+
 export default function HomeDashboardScreen() {
   const theme = useTheme();
-  const { user, dailyTarget } = useSession();
+  const { user, dailyTarget: sessionDailyTarget } = useSession();
   const [addMealSheetVisible, setAddMealSheetVisible] = useState(false);
   const [streakLength, setStreakLength] = useState(0);
   const [reportCardVisible, setReportCardVisible] = useState(true);
 
-  // "Vandaag gelogd" komt uit deze sessie zelf: er is nog geen backend-endpoint dat de
-  // maaltijden van vandaag ophaalt (§5 documenteert enkel POST /api/meals/log).
-  const [todaysMeals] = useState<
-    { icon: string; name: string; subtitle: string; caloriesKcal: number; proteinG: number; carbsG: number; fatG: number }[]
-  >([]);
+  // Geïnitialiseerd met het caloriedoel uit de sessie (gezet net na onboarding/inloggen) zodat er
+  // geen zichtbare terugval naar de placeholder-standaardwaarden is terwijl GET /api/dashboard/today
+  // nog onderweg is; wordt hieronder overschreven zodra het echte antwoord binnenkomt.
+  const [dailyTarget, setDailyTarget] = useState<DailyTarget | null>(sessionDailyTarget);
+  const [totals, setTotals] = useState<DashboardTotals>(ZERO_TOTALS);
+  const [todaysMeals, setTodaysMeals] = useState<MealLog[]>([]);
 
   useEffect(() => {
     apiService
-      .updateStreaks()
-      .then(({ streak, badgesAwarded }) => {
-        setStreakLength(streak.currentLength);
-        addEarnedBadges(badgesAwarded.map((badge) => badge.badgeKey));
+      .getTodayDashboard()
+      .then((response) => {
+        // Geen daily_target in Postgres (bv. de demo-gebruiker, die de echte onboarding nooit
+        // doorloopt): val terug op de sessie-waarde in plaats van de kaart leeg te tonen.
+        setDailyTarget(response.dailyTarget ?? sessionDailyTarget);
+        setTotals(response.totals);
+        setTodaysMeals(response.mealLogs);
       })
+      .catch(() => {
+        // Stil falen: de kaart blijft de sessie-waarden tonen die al beschikbaar waren.
+      });
+
+    apiService
+      .getDashboardStreak()
+      .then(({ currentLength }) => setStreakLength(currentLength))
       .catch(() => {
         // Stil falen: de streak-indicator is decoratief, geen kritiek pad.
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const caloriesGoal = dailyTarget?.caloriesKcal ?? 2000;
@@ -49,10 +86,10 @@ export default function HomeDashboardScreen() {
   const carbsGoal = dailyTarget?.carbsG ?? 200;
   const fatGoal = dailyTarget?.fatG ?? 65;
 
-  const caloriesEaten = todaysMeals.reduce((total, meal) => total + meal.caloriesKcal, 0);
-  const proteinEaten = todaysMeals.reduce((total, meal) => total + meal.proteinG, 0);
-  const carbsEaten = todaysMeals.reduce((total, meal) => total + meal.carbsG, 0);
-  const fatEaten = todaysMeals.reduce((total, meal) => total + meal.fatG, 0);
+  const caloriesEaten = totals.caloriesKcal;
+  const proteinEaten = totals.proteinG;
+  const carbsEaten = totals.carbsG;
+  const fatEaten = totals.fatG;
 
   const proteinRemainingG = Math.max(0, proteinGoal - proteinEaten);
   const carbsRemainingG = Math.max(0, carbsGoal - carbsEaten);
@@ -153,15 +190,18 @@ export default function HomeDashboardScreen() {
             Nog niets gelogd vandaag.
           </ThemedText>
         ) : (
-          todaysMeals.map((meal, index) => (
-            <MealLogRow
-              key={index}
-              icon={meal.icon}
-              name={meal.name}
-              subtitle={meal.subtitle}
-              caloriesKcal={meal.caloriesKcal}
-            />
-          ))
+          todaysMeals.map((log) => {
+            const summary = summarizeMealLog(log);
+            return (
+              <MealLogRow
+                key={log.id}
+                icon={summary.icon}
+                name={summary.name}
+                subtitle={summary.subtitle}
+                caloriesKcal={summary.caloriesKcal}
+              />
+            );
+          })
         )}
       </ScrollView>
 

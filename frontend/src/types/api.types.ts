@@ -149,6 +149,27 @@ export interface UpdateStreaksResponse {
   badgesAwarded: Badge[];
 }
 
+// --- 7. Dashboard: GET /api/dashboard/today, GET /api/dashboard/streak -------
+
+export interface DashboardTotals {
+  caloriesKcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  fiberG: number;
+}
+
+export interface TodayDashboardResponse {
+  /** `null` als er nog nooit een daily_target berekend is (vóór de eerste onboarding-afronding). */
+  dailyTarget: DailyTarget | null;
+  totals: DashboardTotals;
+  mealLogs: MealLog[];
+}
+
+export interface StreakResponse {
+  currentLength: number;
+}
+
 // --- Consent (nog niet als apart endpoint gedocumenteerd in het API-contract) -
 
 export interface SetAdConsentPayload {
