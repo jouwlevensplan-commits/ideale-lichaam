@@ -1,9 +1,9 @@
 import { Router } from 'express';
 
 import { setAdConsent, setHealthConsent } from '../controllers/consent.controller';
-import { withUser } from '../middleware/user-context';
+import { requireAuth } from '../middleware/auth';
 
 export const consentRouter = Router();
 
-consentRouter.post('/health', withUser, setHealthConsent);
-consentRouter.post('/ads', withUser, setAdConsent);
+consentRouter.post('/health', requireAuth, setHealthConsent);
+consentRouter.post('/ads', requireAuth, setAdConsent);

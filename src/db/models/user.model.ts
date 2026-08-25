@@ -13,6 +13,8 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare id: CreationOptional<string>;
   declare auth_provider: string;
   declare auth_subject: string;
+  /** Bcrypt-hash van het wachtwoord voor `auth_provider: 'email'`-accounts; `null` voor elk ander soort account (bv. de demo-gebruiker). */
+  declare password_hash: string | null;
   declare status: CreationOptional<UserStatus>;
   declare timezone: string;
   declare health_data_consent: CreationOptional<boolean>;
@@ -40,6 +42,10 @@ User.init(
     auth_subject: {
       type: DataTypes.STRING,
       allowNull: false,
+    },
+    password_hash: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     status: {
       type: DataTypes.ENUM('active', 'pending_deletion', 'deleted'),

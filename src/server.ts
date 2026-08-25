@@ -2,6 +2,7 @@ import express from 'express';
 
 import { connectDatabase } from './db/client';
 import { syncDatabase } from './db/models';
+import { runMigrations } from './db/migrations';
 import { runSeeds } from './db/seeds';
 import { errorHandler } from './middleware/error-handler';
 import { apiRouter } from './routes';
@@ -40,9 +41,10 @@ if (require.main === module) {
   // en van seed-data voorzien; dit blokkeert het luisteren op `PORT` bewust niet meer.
   connectDatabase()
     .then(() => syncDatabase())
+    .then(() => runMigrations())
     .then(() => runSeeds())
     .then(() => {
-      console.log('Databaseverbinding gelegd, tabellen gesynchroniseerd en seed-data toegepast.');
+      console.log('Databaseverbinding gelegd, tabellen gesynchroniseerd, migraties en seed-data toegepast.');
     })
     .catch((error) => {
       console.error('Databaseverbinding, -synchronisatie of seed is mislukt; server blijft draaien.', error);

@@ -13,6 +13,8 @@ import type { DailyTarget, UserAccount, WeeklyGoal } from '@/types/api.types';
  */
 export interface SessionState {
   userId: string | null;
+  /** JWT (`Authorization: Bearer <token>`), zie `services/api.service.ts#apiFetch`. `null` zolang er geen sessie is. */
+  token: string | null;
   user: UserAccount | null;
   dailyTarget: DailyTarget | null;
   weeklyGoal: WeeklyGoal | null;
@@ -32,6 +34,7 @@ const STORAGE_KEY = 'maaltijdtracker.session.v1';
 
 const EMPTY_PERSISTED_STATE: PersistedSessionState = {
   userId: null,
+  token: null,
   user: null,
   dailyTarget: null,
   weeklyGoal: null,
@@ -80,18 +83,17 @@ export function addEarnedBadges(badgeKeys: string[]): void {
 }
 
 // --- Demo-login ---
-// De backend ondersteunt nog geen live e-mailregistratie/OAuth (zie useAuthNavigation.ts). Om de
-// app tot die tijd toch visueel te kunnen testen, schrijft `loginAsDemoUser()` een volledig
-// gemockte sessie rechtstreeks naar AsyncStorage, buiten de server om.
+// `apiService.demoLogin()` (alleen aangeroepen vanachter de __DEV__-gate in app/(auth)/login.tsx)
+// haalt een echte JWT op voor de vaste, geseede demo-gebruiker "Sam" — zie
+// controllers/auth.controller.ts#demoLogin op de backend. `applyDemoDashboardFixture()` overlayt
+// daarna enkel de dashboardcijfers (caloriedoel/macro's) lokaal, zodat de demo-sessie meteen een
+// gevulde UI toont zonder dat "Sam" eerst de echte onboarding moet doorlopen.
 
-// Moet een geldige UUID zijn (en exact overeenkomen met `DEMO_USER_ID` in de backend-seed,
-// src/db/seeds/demo-user.seed.ts) — de backend valideert de `X-User-Id`-header tegen een strikt
-// UUID-patroon en negeert/vervangt elke niet-conforme waarde stilzwijgend door een gloednieuwe
-// willekeurige gebruiker. Een niet-UUID-achtige demo-ID zou de demo-sessie dus nooit een stabiele
-// identiteit op de server geven, ongeacht welke consent daar voor die ID staat.
+// Moet exact overeenkomen met `DEMO_USER_ID` in de backend-seed (src/db/seeds/demo-user.seed.ts):
+// dat is de vaste rij waarvoor `POST /api/auth/demo-login` een token uitgeeft.
 const DEMO_USER_ID = '11111111-1111-4111-8111-111111111111';
 
-/** True als `userId` de gemockte demo-gebruiker "Sam" is (zie `loginAsDemoUser`), niet een echt account. */
+/** True als `userId` de vaste, geseede demo-gebruiker "Sam" is (zie `applyDemoDashboardFixture`), niet een door een echte gebruiker geregistreerd account. */
 export function isDemoUserId(userId: string | null): boolean {
   return userId === DEMO_USER_ID;
 }
@@ -115,7 +117,7 @@ function addDays(date: Date, days: number): Date {
   return result;
 }
 
-function buildDemoState(): Pick<SessionState, 'userId' | 'user' | 'dailyTarget' | 'weeklyGoal' | 'cookieConsentGiven'> {
+function buildDemoDashboardFixture(): Pick<SessionState, 'dailyTarget' | 'weeklyGoal' | 'cookieConsentGiven'> {
   const today = new Date();
   const weekStart = mondayOf(today);
   const weekEnd = addDays(weekStart, 7);
@@ -125,15 +127,6 @@ function buildDemoState(): Pick<SessionState, 'userId' | 'user' | 'dailyTarget' 
   const fiberG = 30;
 
   return {
-    userId: DEMO_USER_ID,
-    user: {
-      id: DEMO_USER_ID,
-      isPremium: true,
-      healthDataConsent: true,
-      analyticsConsent: true,
-      personalizedAdsConsent: true,
-      timezone: 'Europe/Brussels',
-    },
     dailyTarget: {
       targetDate: toISODate(today),
       caloriesKcal,
@@ -154,14 +147,14 @@ function buildDemoState(): Pick<SessionState, 'userId' | 'user' | 'dailyTarget' 
 }
 
 /**
- * Logt in als gemockte demo-gebruiker "Sam" (zie de `firstName`-fallback in het Home-dashboard):
- * schrijft een volledige sessie — inclusief caloriedoelen en alle GDPR-toestemmingen op `true` —
- * naar AsyncStorage en naar de live sessie-store, zodat de navigatiegate in `app/index.tsx`
- * meteen doorstuurt naar `(tabs)`, zonder dat de server ooit wordt aangeroepen. Vervang dit door
- * echte authenticatie zodra de backend e-mail-/OAuth-login ondersteunt.
+ * Past een net via `apiService.demoLogin()` opgehaalde echte sessie (gebruiker + JWT voor "Sam")
+ * toe, overlayd met gemockte dashboardcijfers: de demo-gebruiker heeft in Postgres wel actieve
+ * GDPR-toestemmingen (zie de seed) maar geen echt `daily_targets`/`weekly_goals`-record, omdat
+ * "Sam" nooit echt de onboarding doorloopt. Zo blijft de demo-flow zowel visueel meteen gevuld als
+ * functioneel echt: latere aanroepen (maaltijd loggen, product zoeken) gebruiken de echte JWT.
  */
-export async function loginAsDemoUser(): Promise<void> {
-  state = { ...state, ...buildDemoState() };
+export async function applyDemoDashboardFixture(auth: { userId: string; user: UserAccount; token: string }): Promise<void> {
+  state = { ...state, userId: auth.userId, user: auth.user, token: auth.token, ...buildDemoDashboardFixture() };
   emit();
   await persist();
 }

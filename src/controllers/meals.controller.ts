@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 
-import { sequelize, MealItem, MealLog, User } from '../db/models';
-import { BadRequestError, ConsentRequiredError } from '../db/errors';
+import { sequelize, MealItem, MealLog } from '../db/models';
+import { BadRequestError, ConsentRequiredError, UnauthorizedError } from '../db/errors';
 import type { MealType } from '../types/database.types';
 import { mapMealLog } from './mappers';
 
@@ -74,14 +74,9 @@ function validateBody(body: Partial<LogMealRequestBody>): LogMealRequestBody {
 export async function logMeal(req: Request, res: Response): Promise<void> {
   const body = validateBody((req.body ?? {}) as Partial<LogMealRequestBody>);
 
-  const userId = req.userId;
-  if (!userId) {
-    throw new BadRequestError('Ontbrekende gebruikerscontext.');
-  }
-
-  const user = await User.findByPk(userId);
+  const user = req.user;
   if (!user) {
-    throw new BadRequestError('Onbekende gebruiker.');
+    throw new UnauthorizedError('Ontbrekende gebruikerscontext.');
   }
 
   if (user.health_data_consent !== true) {
@@ -91,7 +86,7 @@ export async function logMeal(req: Request, res: Response): Promise<void> {
   const { mealLog, items } = await sequelize.transaction(async (transaction) => {
     const mealLog = await MealLog.create(
       {
-        user_id: userId,
+        user_id: user.id,
         recognition_run_id: null,
         media_asset_id: null,
         consumed_at: new Date(),

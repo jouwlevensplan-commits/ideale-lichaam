@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
-import { BadRequestError, ConsentRequiredError } from '../db/errors';
+import { BadRequestError, ConflictError, ConsentRequiredError, UnauthorizedError } from '../db/errors';
 
 /**
  * Centrale foutafhandeling voor de API-routes. Express 5 stuurt afgewezen promises uit
@@ -15,6 +15,16 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
 
   if (error instanceof ConsentRequiredError) {
     res.status(403).json({ error: 'health_data_consent_required', message: error.message });
+    return;
+  }
+
+  if (error instanceof UnauthorizedError) {
+    res.status(401).json({ error: 'unauthorized', message: error.message });
+    return;
+  }
+
+  if (error instanceof ConflictError) {
+    res.status(409).json({ error: 'conflict', message: error.message });
     return;
   }
 

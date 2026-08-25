@@ -4,13 +4,7 @@ import { useState } from 'react';
 import * as apiService from '@/services/api.service';
 import { setSession } from '@/services/session';
 
-/**
- * LET OP: `/api/auth/login` en `/api/auth/register` staan niet in het gedocumenteerde
- * API-contract (`frontend-design-spec-v2.md` §5) en de backend `User`-tabel gebruikt
- * `auth_provider`/`auth_subject` (lijkt eerder op externe identity providers dan
- * e-mail+wachtwoord). Dit is dus een bewust provisorische aanname totdat het echte
- * authenticatiemechanisme vastligt — zie ook api.service.ts.
- */
+/** Login/registratieformulier: roept de echte `/api/auth/{login,register}`-endpoints aan en bewaart de teruggekregen gebruiker + JWT in de sessie. */
 export function useAuthNavigation(mode: 'login' | 'register') {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,8 +22,8 @@ export function useAuthNavigation(mode: 'login' | 'register') {
     setLoading(true);
     try {
       const action = mode === 'login' ? apiService.login : apiService.register;
-      const { user } = await action({ email: email.trim(), password });
-      setSession({ userId: user.id, user });
+      const { user, token } = await action({ email: email.trim(), password });
+      setSession({ userId: user.id, user, token });
       router.replace('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Er ging iets mis. Probeer het opnieuw.');

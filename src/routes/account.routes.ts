@@ -1,8 +1,8 @@
 import { Router } from 'express';
 
 import { deleteAccount } from '../controllers/account.controller';
-import { withUser } from '../middleware/user-context';
+import { requireAuth } from '../middleware/auth';
 
 export const accountRouter = Router();
 
-accountRouter.delete('/', withUser, deleteAccount);
+accountRouter.delete('/', requireAuth, deleteAccount);

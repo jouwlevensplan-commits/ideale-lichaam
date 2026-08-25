@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 
 import { sequelize, DailyTarget, Goal, MealLog, User, UserProfile, WeeklyGoal } from '../db/models';
-import { BadRequestError } from '../db/errors';
+import { UnauthorizedError } from '../db/errors';
 
 /**
  * Verwijdert een gebruiker en al diens gezondheidsgegevens definitief uit PostgreSQL ("recht om
@@ -12,15 +12,11 @@ import { BadRequestError } from '../db/errors';
  * meegenomen zodra de bijbehorende `meal_logs`-rij verdwijnt.
  */
 export async function deleteAccount(req: Request, res: Response): Promise<void> {
-  const userId = req.userId;
-  if (!userId) {
-    throw new BadRequestError('Ontbrekende gebruikerscontext.');
-  }
-
-  const user = await User.findByPk(userId);
+  const user = req.user;
   if (!user) {
-    throw new BadRequestError('Onbekende gebruiker.');
+    throw new UnauthorizedError('Ontbrekende gebruikerscontext.');
   }
+  const userId = user.id;
 
   await sequelize.transaction(async (transaction) => {
     await MealLog.destroy({ where: { user_id: userId }, transaction });

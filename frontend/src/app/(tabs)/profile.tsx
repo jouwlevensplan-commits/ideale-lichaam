@@ -57,7 +57,7 @@ export default function ProfileScreen() {
     Alert.alert(
       isDemoUser ? 'Demo-sessie wissen' : 'Account verwijderen',
       isDemoUser
-        ? 'Dit wist de lokale demo-gegevens van "Sam" van dit toestel. Er wordt geen server aangeroepen — je kunt de onboarding daarna opnieuw vanaf 0 doorlopen.'
+        ? 'Dit wist enkel de lokale sessie van "Sam" op dit toestel. Het gedeelde demo-account op de server blijft bestaan voor andere testers — je kunt de onboarding daarna opnieuw vanaf 0 doorlopen.'
         : 'Weet je zeker dat je je account en alle gezondheidsgegevens definitief wilt verwijderen? Dit kan niet ongedaan worden gemaakt.',
       [
         { text: 'Annuleren', style: 'cancel' },
@@ -67,9 +67,9 @@ export default function ProfileScreen() {
           onPress: async () => {
             setDeleting(true);
             try {
-              // Demo-modus bestaat alleen lokaal (services/session.ts#loginAsDemoUser): er is
-              // geen echt account op de server om te verwijderen, en DELETE /api/account bestaat
-              // daar nog niet voor, dus we wissen enkel de lokale sessie.
+              // "Sam" is een gedeeld, opnieuw geseed demo-fixture-account (zie
+              // src/db/seeds/demo-user.seed.ts) waar andere testers ook op inloggen: we roepen
+              // hier bewust geen DELETE /api/account voor aan en wissen enkel de lokale sessie.
               if (!isDemoUser) {
                 await apiService.deleteAccount();
               }

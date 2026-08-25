@@ -9,18 +9,24 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthNavigation } from '@/screens/auth/useAuthNavigation';
-import { loginAsDemoUser } from '@/services/session';
+import * as apiService from '@/services/api.service';
+import { applyDemoDashboardFixture } from '@/services/session';
 
 export default function LoginScreen() {
   const theme = useTheme();
   const { email, setEmail, password, setPassword, error, loading, submit } = useAuthNavigation('login');
   const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
 
   const submitDemoLogin = async () => {
     setDemoLoading(true);
+    setDemoError(null);
     try {
-      await loginAsDemoUser();
+      const { user, token } = await apiService.demoLogin();
+      await applyDemoDashboardFixture({ userId: user.id, user, token });
       router.replace('/');
+    } catch (err) {
+      setDemoError(err instanceof Error ? err.message : 'Demo-login is mislukt. Probeer het opnieuw.');
     } finally {
       setDemoLoading(false);
     }
@@ -64,17 +70,26 @@ export default function LoginScreen() {
       </ThemedText>
 
       {/*
-        Er is nog geen live e-mailregistratie/OAuth op de backend (zie useAuthNavigation.ts).
-        Deze knop logt lokaal in als gemockte demo-gebruiker zodat de app nu al visueel te testen
-        is, volledig buiten de server om — zie services/session.ts#loginAsDemoUser.
+        Alleen zichtbaar in development builds: logt in als de vaste, geseede demo-gebruiker
+        "Sam" via een echte (wachtwoordloze) JWT — zie apiService.demoLogin() en
+        services/session.ts#applyDemoDashboardFixture. Nooit onderdeel van een productiebuild.
       */}
-      <Button
-        label={demoLoading ? 'Bezig...' : 'Inloggen als Demo-gebruiker'}
-        onPress={submitDemoLogin}
-        disabled={demoLoading}
-        variant="outline"
-        style={styles.demoButton}
-      />
+      {__DEV__ ? (
+        <>
+          {demoError ? (
+            <ThemedText type="small" style={styles.error}>
+              {demoError}
+            </ThemedText>
+          ) : null}
+          <Button
+            label={demoLoading ? 'Bezig...' : 'Inloggen als Demo-gebruiker'}
+            onPress={submitDemoLogin}
+            disabled={demoLoading}
+            variant="outline"
+            style={styles.demoButton}
+          />
+        </>
+      ) : null}
     </SafeAreaView>
   );
 }

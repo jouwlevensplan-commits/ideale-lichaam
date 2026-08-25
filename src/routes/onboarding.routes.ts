@@ -1,8 +1,8 @@
 import { Router } from 'express';
 
 import { completeOnboarding } from '../controllers/onboarding.controller';
-import { withUser } from '../middleware/user-context';
+import { requireAuth } from '../middleware/auth';
 
 export const onboardingRouter = Router();
 
-onboardingRouter.post('/complete', withUser, completeOnboarding);
+onboardingRouter.post('/complete', requireAuth, completeOnboarding);

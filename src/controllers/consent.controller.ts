@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { User } from '../db/models';
-import { BadRequestError } from '../db/errors';
+import { BadRequestError, UnauthorizedError } from '../db/errors';
 import { mapUser } from './mappers';
 
 const CONSENT_POLICY_VERSION = process.env.CONSENT_POLICY_VERSION ?? 'privacy-v1';
@@ -15,17 +14,12 @@ const CONSENT_POLICY_VERSION = process.env.CONSENT_POLICY_VERSION ?? 'privacy-v1
  */
 
 export async function setHealthConsent(req: Request, res: Response): Promise<void> {
-  const userId = req.userId;
-  if (!userId) {
-    throw new BadRequestError('Ontbrekende gebruikerscontext.');
+  const user = req.user;
+  if (!user) {
+    throw new UnauthorizedError('Ontbrekende gebruikerscontext.');
   }
   if (typeof req.body?.accepted !== 'boolean') {
     throw new BadRequestError('accepted (boolean) is verplicht.');
-  }
-
-  const user = await User.findByPk(userId);
-  if (!user) {
-    throw new BadRequestError('Onbekende gebruiker.');
   }
 
   const accepted = req.body.accepted as boolean;
@@ -38,19 +32,14 @@ export async function setHealthConsent(req: Request, res: Response): Promise<voi
 }
 
 export async function setAdConsent(req: Request, res: Response): Promise<void> {
-  const userId = req.userId;
-  if (!userId) {
-    throw new BadRequestError('Ontbrekende gebruikerscontext.');
+  const user = req.user;
+  if (!user) {
+    throw new UnauthorizedError('Ontbrekende gebruikerscontext.');
   }
 
   const { analyticsConsent, personalizedAdsConsent } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof analyticsConsent !== 'boolean' || typeof personalizedAdsConsent !== 'boolean') {
     throw new BadRequestError('analyticsConsent en personalizedAdsConsent (boolean) zijn verplicht.');
-  }
-
-  const user = await User.findByPk(userId);
-  if (!user) {
-    throw new BadRequestError('Onbekende gebruiker.');
   }
 
   user.analytics_consent = analyticsConsent;

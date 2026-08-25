@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 
-import { sequelize, User, UserProfile, Goal, DailyTarget, WeeklyGoal } from '../db/models';
-import { BadRequestError, ConsentRequiredError } from '../db/errors';
+import { sequelize, UserProfile, Goal, DailyTarget, WeeklyGoal } from '../db/models';
+import { BadRequestError, ConsentRequiredError, UnauthorizedError } from '../db/errors';
 import {
   calculateAgeInYears,
   calculateBmr,
@@ -122,15 +122,11 @@ function addDays(dateStr: string, days: number): string {
 export async function completeOnboarding(req: Request, res: Response): Promise<void> {
   const body = validateBody((req.body ?? {}) as Partial<CompleteOnboardingRequestBody>);
 
-  const userId = req.userId;
-  if (!userId) {
-    throw new BadRequestError('Ontbrekende gebruikerscontext.');
-  }
-
-  const user = await User.findByPk(userId);
+  const user = req.user;
   if (!user) {
-    throw new BadRequestError('Onbekende gebruiker.');
+    throw new UnauthorizedError('Ontbrekende gebruikerscontext.');
   }
+  const userId = user.id;
 
   if (user.health_data_consent !== true) {
     throw new ConsentRequiredError(

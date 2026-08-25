@@ -30,23 +30,22 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
-  /** Stuurt expliciet géén X-User-Id-header mee (bv. voor login/register, vóór er een sessie is). */
+  /** Stuurt expliciet géén Authorization-header mee (login/register/demo-login, vóór er een sessie is; en de publieke productzoekfunctie). */
   skipAuth?: boolean;
 }
 
 /**
- * Gedeelde fetch-wrapper. Verstuurt de ingelogde gebruiker vooralsnog via een `X-User-Id`-header
- * (`skipAuth: true` slaat dit over). Dit is een BEWUST PROVISORISCH authenticatieschema: het
- * API-contract in `frontend-design-spec-v2.md` §5 documenteert nog geen tokenmechanisme (JWT/sessie
- * cookie) of `/api/auth/*`-endpoints. Vervang dit zodra de backend een echte auth-flow aanbiedt.
+ * Gedeelde fetch-wrapper. Stuurt de ingelogde gebruiker als `Authorization: Bearer <token>`
+ * (`skipAuth: true` slaat dit over) — de JWT komt uit `services/auth.controller.ts` op de backend
+ * via `POST /api/auth/{register,login,demo-login}` en wordt lokaal bewaard in `session.ts`.
  */
 async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, skipAuth = false } = options;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   if (!skipAuth) {
-    const { userId } = getSession();
-    if (userId) headers['X-User-Id'] = userId;
+    const { token } = getSession();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
   }
 
   let response: Response;
@@ -144,9 +143,6 @@ export async function setAdConsent(payload: SetAdConsentPayload): Promise<UserAc
 }
 
 // --- Authenticatie ---------------------------------------------------------------
-// LET OP: ook dit contract is niet gedocumenteerd in §5. De backend User-tabel gebruikt
-// `auth_provider`/`auth_subject` (bv. voor OAuth-achtige providers), niet per se e-mail/wachtwoord.
-// Dit is een provisorische, e-mail-gebaseerde aanname totdat het echte auth-mechanisme vastligt.
 
 export interface AuthPayload {
   email: string;
@@ -155,6 +151,8 @@ export interface AuthPayload {
 
 export interface AuthResponse {
   user: UserAccount;
+  /** JWT; bewaar in `session.ts` en stuur nadien mee als `Authorization: Bearer <token>`. */
+  token: string;
 }
 
 export async function login(payload: AuthPayload): Promise<AuthResponse> {
@@ -163,6 +161,15 @@ export async function login(payload: AuthPayload): Promise<AuthResponse> {
 
 export async function register(payload: AuthPayload): Promise<AuthResponse> {
   return apiFetch<AuthResponse>('/api/auth/register', { method: 'POST', body: payload, skipAuth: true });
+}
+
+/**
+ * Dev-only: haalt een echte JWT op voor de vaste, geseede demo-gebruiker "Sam", zonder wachtwoord
+ * (backend: `controllers/auth.controller.ts#demoLogin`). Enkel aangeroepen vanachter de
+ * `__DEV__`-gate op het loginscherm — zie `app/(auth)/login.tsx`.
+ */
+export async function demoLogin(): Promise<AuthResponse> {
+  return apiFetch<AuthResponse>('/api/auth/demo-login', { method: 'POST', skipAuth: true });
 }
 
 export async function deleteAccount(): Promise<void> {

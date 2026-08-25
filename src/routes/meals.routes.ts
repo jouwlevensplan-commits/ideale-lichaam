@@ -1,8 +1,8 @@
 import { Router } from 'express';
 
 import { logMeal } from '../controllers/meals.controller';
-import { withUser } from '../middleware/user-context';
+import { requireAuth } from '../middleware/auth';
 
 export const mealsRouter = Router();
 
-mealsRouter.post('/log', withUser, logMeal);
+mealsRouter.post('/log', requireAuth, logMeal);
