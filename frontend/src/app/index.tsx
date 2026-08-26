@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
+import { useEffect } from 'react';
 
-import { useSession } from '@/services/session';
+import { clearSession, useSession } from '@/services/session';
 
 /**
  * Navigatiegate: leidt door naar de juiste flow op basis van de lokaal opgeslagen sessie (zie
@@ -18,6 +19,16 @@ import { useSession } from '@/services/session';
  */
 export default function IndexGate() {
   const { hydrated, userId, token, user } = useSession();
+
+  // Veiligheidsnet: een sessie zonder token (zie hierboven) wordt door de redirect verderop al
+  // naar login gestuurd, maar blijft anders als kapotte restanten in AsyncStorage staan en komt
+  // bij elke herstart opnieuw zo binnen via hydrateSession(). clearSession() ruimt die state
+  // ook echt op, niet enkel de navigatie eromheen.
+  useEffect(() => {
+    if (hydrated && userId && !token) {
+      clearSession();
+    }
+  }, [hydrated, userId, token]);
 
   if (!hydrated) {
     return null;

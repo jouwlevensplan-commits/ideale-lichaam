@@ -16,7 +16,7 @@ import { clearSession, isDemoUserId, setSession, useSession } from '@/services/s
 /** Scherm 7: Profiel, SaaS-abonnement (WER-disclaimer) & instellingen. */
 export default function ProfileScreen() {
   const theme = useTheme();
-  const { user, userId } = useSession();
+  const { user, userId, token } = useSession();
   const isDemoUser = isDemoUserId(userId);
   const [withdrawalChecked, setWithdrawalChecked] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
@@ -25,6 +25,14 @@ export default function ProfileScreen() {
   const [savingConsent, setSavingConsent] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  /**
+   * Uitloggen is bewust een puur lokale actie, zonder enige API-aanroep: "uitloggen" betekent
+   * simpelweg "vergeet mijn sessie op dit toestel", niet "verwijder mijn account op de server"
+   * (dat is DELETE /api/account hieronder, een aparte, destructieve actie). Dat is ook precies
+   * waarom dit altijd moet werken, zelfs met een kapotte/verlopen token waarmee geen enkele
+   * geauthenticeerde aanroep meer lukt: er wordt hier niets naar de server gestuurd om te kunnen
+   * uitloggen.
+   */
   const logout = () => {
     clearSession();
     router.replace('/(auth)/login');
@@ -71,11 +79,28 @@ export default function ProfileScreen() {
               // src/db/seeds/demo-user.seed.ts) waar andere testers ook op inloggen: we roepen
               // hier bewust geen DELETE /api/account voor aan en wissen enkel de lokale sessie.
               if (!isDemoUser) {
+                if (!token) {
+                  // Geen (geldig) token: dit zou toch als 401 terugkomen. Vooraf checken bespaart
+                  // een zinloze roundtrip en voorkomt dat de gebruiker vastzit op dit scherm met
+                  // enkel een foutmelding — stuur direct door naar login.
+                  clearSession();
+                  Alert.alert('Niet meer ingelogd', 'Je sessie is verlopen. Log opnieuw in en probeer het opnieuw.');
+                  router.replace('/(auth)/login');
+                  return;
+                }
                 await apiService.deleteAccount();
               }
               clearSession();
               router.replace('/');
             } catch (err) {
+              const isAuthError = err instanceof apiService.ApiError && err.statusCode === 401;
+              if (isAuthError) {
+                // apiFetch heeft de sessie bij een 401 al lokaal gewist (zie api.service.ts) — hier
+                // enkel nog de gebruiker informeren en naar login sturen, niet nog eens wissen.
+                Alert.alert('Niet meer ingelogd', 'Je sessie is verlopen. Log opnieuw in en probeer het opnieuw.');
+                router.replace('/(auth)/login');
+                return;
+              }
               Alert.alert('Mislukt', err instanceof Error ? err.message : 'Kon het account niet verwijderen.');
             } finally {
               setDeleting(false);
