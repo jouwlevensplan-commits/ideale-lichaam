@@ -15,7 +15,7 @@ import type {
   WeeklyReport,
 } from '@/types/api.types';
 
-import { getSession } from './session';
+import { clearSession, getSession } from './session';
 
 const API_BASE_URL = 'https://p01--ideale-lichaam--kbd9hgdzc7ny.code.run';
 
@@ -47,7 +47,13 @@ async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<
 
   if (!skipAuth) {
     const { token } = getSession();
+    // Tijdelijke diagnostische log voor de 401-op-/api/meals/log-bug: laat in de Metro/device-logs
+    // zien of er überhaupt een token in de sessie zit vóórdat het request vertrekt, zodat "header
+    // wordt niet verstuurd" en "token ontbreekt in de sessie" niet langer door elkaar lopen.
+    console.log(`[apiFetch] ${method} ${path} — token ${token ? `gevonden (${token.slice(0, 12)}...)` : 'ONTBREEKT'}`);
     if (token) headers['Authorization'] = `Bearer ${token}`;
+  } else {
+    console.log(`[apiFetch] ${method} ${path} — skipAuth: geen Authorization-header verstuurd`);
   }
 
   let response: Response;
@@ -66,6 +72,17 @@ async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !skipAuth) {
+      // De token die we meestuurden (of het ontbreken ervan) is door de backend afgewezen: een
+      // eerder ingelogde sessie zonder geldig token zou anders "ingelogd" blijven lijken (zie de
+      // navigatiegate in app/index.tsx, die enkel userId/consent checkt) terwijl elke
+      // geauthenticeerde aanroep alsnog met een 401 faalt. Wis de sessie zodat de gebruiker bij de
+      // volgende gate-check terug naar /(auth)/login gaat i.p.v. onopgemerkt met een dode sessie
+      // te blijven zitten.
+      console.warn(`[apiFetch] ${method} ${path} — 401 ontvangen, sessie wordt lokaal gewist.`);
+      clearSession();
+    }
+
     const bodyText = await response.text().catch(() => '');
     // De backend stuurt foutrespons als JSON ({ error, message }, zie middleware/error-handler.ts)
     // met een al-Nederlandstalige, gebruiksklare `message`; die geven we door in plaats van de
